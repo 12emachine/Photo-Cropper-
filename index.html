@@ -21,7 +21,6 @@
     Upload → drag to select → crop → download.
   </p>
 
-  <!-- Controls -->
   <div class="flex flex-col sm:flex-row gap-4">
     <label for="imageUpload" class="flex-1 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg text-center">
       Select Image
@@ -37,7 +36,6 @@
     </button>
   </div>
 
-  <!-- Canvas -->
   <div id="canvasContainer" class="w-full relative min-h-64 flex items-center justify-center rounded-xl bg-gray-100 p-2">
     <p id="placeholderText" class="text-gray-400 text-lg absolute">Upload an image to start cropping...</p>
     <canvas id="imageCanvas"></canvas>
@@ -47,11 +45,9 @@
 </div>
 
 <script>
-  // ==== Config ====
   const NOTIFY_MS = 3000;
   const MIN_CROP = 5;
 
-  // ==== DOM ====
   const canvas = document.getElementById('imageCanvas');
   const ctx = canvas.getContext('2d');
   const upload = document.getElementById('imageUpload');
@@ -61,13 +57,11 @@
   const placeholder = document.getElementById('placeholderText');
   const container = document.getElementById('canvasContainer');
 
-  // ==== State ====
-  let img = null;                 // original Image object
+  let img = null;
   let dragging = false;
   let rect = {sx:0, sy:0, ex:0, ey:0};
-  let imgToCanvas = 1;            // originalPx / canvasPx
+  let imgToCanvas = 1;
 
-  // ==== Helpers ====
   const notify = (msg, type='error') => {
     note.textContent = msg;
     note.className = `p-3 border rounded-lg ${type==='success'?'bg-green-100 border-green-400 text-green-700':'bg-red-100 border-red-400 text-red-700'}`;
@@ -83,34 +77,21 @@
 
   const toImg = (cx,cy) => ({x: cx*imgToCanvas, y: cy*imgToCanvas});
 
-  // ==== Drawing ====
   const draw = () => {
     if (!img) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    // image
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
-
-    // dark mask
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    // clear crop hole
     const sx = Math.min(rect.sx, rect.ex);
     const sy = Math.min(rect.sy, rect.ey);
     const w  = Math.abs(rect.ex - rect.sx);
     const h  = Math.abs(rect.ey - rect.sy);
     ctx.clearRect(sx,sy,w,h);
-
-    // image inside hole
-    ctx.save();
-    ctx.beginPath(); ctx.rect(sx,sy,w,h); ctx.clip();
+    ctx.save(); ctx.beginPath(); ctx.rect(sx,sy,w,h); ctx.clip();
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
     ctx.restore();
-
-    // border
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
     ctx.strokeRect(sx,sy,w,h);
   };
 
@@ -119,15 +100,11 @@
     const cw = container.clientWidth;
     const maxH = Math.min(window.innerHeight*0.8, 600);
     const ar = img.width / img.height;
-
     let width = cw, height = cw / ar;
     if (height > maxH) { height = maxH; width = maxH * ar; }
-
     canvas.width = Math.floor(width);
     canvas.height = Math.floor(height);
     imgToCanvas = img.width / canvas.width;
-
-    // reset rect to full canvas
     rect = {sx:0, sy:0, ex:canvas.width, ey:canvas.height};
     placeholder.classList.add('hidden');
     canvas.style.display = 'block';
@@ -135,7 +112,6 @@
     cropBtn.disabled = dlBtn.disabled = false;
   };
 
-  // ==== Upload ====
   upload.onchange = e => {
     const file = e.target.files[0];
     if (!file || !file.type.startsWith('image/')) return notify('Invalid image');
@@ -148,7 +124,6 @@
     reader.readAsDataURL(file);
   };
 
-  // ==== Drag ====
   const start = e => { if(!img) return; e.preventDefault(); dragging=true; const p=canvasPos(e); rect.sx=rect.ex=p.x; rect.sy=rect.ey=p.y; draw(); };
   const move  = e => { if(!dragging||!img) return; e.preventDefault(); const p=canvasPos(e); rect.ex=p.x; rect.ey=p.y; draw(); };
   const end   = () => { if(!img) return; dragging=false; const sx=Math.min(rect.sx,rect.ex), sy=Math.min(rect.sy,rect.ey), ex=Math.max(rect.sx,rect.ex), ey=Math.max(rect.sy,rect.ey); rect={sx,sy,ex,ey}; };
@@ -162,7 +137,6 @@
   canvas.addEventListener('touchend',   end);
   canvas.addEventListener('touchcancel',end);
 
-  // ==== Crop ====
   cropBtn.onclick = () => {
     if (!img) return notify('Load an image first');
     const w = Math.abs(rect.ex - rect.sx);
@@ -170,8 +144,8 @@
     if (w<MIN_CROP || h<MIN_CROP) return notify('Selection too small');
 
     const src = toImg(Math.min(rect.sx,rect.ex), Math.min(rect.sy,rect.ey));
-    const srcW = Math.abs(rect.ex - rect.sx) * imgToCanvas;
-    const srcH = Math.abs(rect.ey - rect.sy) * imgToCanvas;
+    const srcW = w * imgToCanvas;
+    const srcH = h * imgToCanvas;
 
     const temp = document.createElement('canvas');
     temp.width = srcW; temp.height = srcH;
@@ -183,30 +157,42 @@
     newImg.src = temp.toDataURL('image/png');
   };
 
-  // ==== Download (fixed) ====
+  /* ----------  FIXED DOWNLOAD ---------- */
   dlBtn.onclick = () => {
     if (!img) return notify('Nothing to download');
 
-    // Create a temporary canvas at the *original* image size (preserves quality)
-    const temp = document.createElement('canvas');
-    temp.width = img.width;
-    temp.height = img.height;
-    const tctx = temp.getContext('2d');
-    tctx.drawImage(img, 0,0, img.width, img.height);
+    const sx = Math.min(rect.sx, rect.ex);
+    const sy = Math.min(rect.sy, rect.ey);
+    const w  = Math.abs(rect.ex - rect.sx);
+    const h  = Math.abs(rect.ey - rect.sy);
 
-    // Trigger native download
+    if (w < MIN_CROP || h < MIN_CROP) return notify('Selection too small');
+
+    const srcX = sx * imgToCanvas;
+    const srcY = sy * imgToCanvas;
+    const srcW = w  * imgToCanvas;
+    const srcH = h  * imgToCanvas;
+
+    const temp = document.createElement('canvas');
+    temp.width  = srcW;
+    temp.height = srcH;
+    const tctx = temp.getContext('2d');
+    tctx.drawImage(img, srcX, srcY, srcW, srcH, 0,0, srcW, srcH);
+
     temp.toBlob(blob => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `cropped_${Date.now()}.png`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
       notify('Download started','success');
     }, 'image/png');
   };
+  /* ------------------------------------- */
 
-  // ==== Init ====
   canvas.style.display = 'none';
   window.addEventListener('resize', () => img && resizeCanvas());
 </script>
