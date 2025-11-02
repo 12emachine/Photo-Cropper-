@@ -157,7 +157,9 @@
     newImg.src = temp.toDataURL('image/png');
   };
 
-  /* ----------  FIXED DOWNLOAD ---------- */
+  /* -------------------------------------------------
+     FINAL DOWNLOAD – works on every modern browser
+     ------------------------------------------------- */
   dlBtn.onclick = () => {
     if (!img) return notify('Nothing to download');
 
@@ -179,19 +181,39 @@
     const tctx = temp.getContext('2d');
     tctx.drawImage(img, srcX, srcY, srcW, srcH, 0,0, srcW, srcH);
 
+    console.log('Creating download blob…');
     temp.toBlob(blob => {
+      if (!blob) { console.error('Blob creation failed'); return notify('Download failed'); }
+
       const url = URL.createObjectURL(blob);
+      const fileName = `cropped_${Date.now()}.png`;
+
+      // ---- 1. IE / Edge legacy ----
+      if (navigator.msSaveBlob) {
+        navigator.msSaveBlob(blob, fileName);
+        console.log('IE download triggered');
+        notify('Download started','success');
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      // ---- 2. Modern browsers (including iOS Safari) ----
       const a = document.createElement('a');
       a.href = url;
-      a.download = `cropped_${Date.now()}.png`;
+      a.download = fileName;
       document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      notify('Download started','success');
+
+      // schedule click on the next tick → satisfies user-gesture rule
+      setTimeout(() => {
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log('Download link clicked');
+        notify('Download started','success');
+      }, 0);
     }, 'image/png');
   };
-  /* ------------------------------------- */
+  /* ------------------------------------------------- */
 
   canvas.style.display = 'none';
   window.addEventListener('resize', () => img && resizeCanvas());
