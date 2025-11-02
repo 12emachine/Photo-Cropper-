@@ -1,421 +1,214 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Image Cropper</title>
-    <!-- Load Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Set Inter font and ensure full height */
-        body { font-family: 'Inter', sans-serif; min-height: 100vh; margin: 0; background-color: #f3f4f6; }
-        /* Style the canvas to be centered and responsive */
-        canvas {
-            display: block;
-            background: #fff;
-            border: 2px dashed #d1d5db;
-            max-width: 100%;
-            height: auto; /* Allow height to adjust based on width */
-            border-radius: 0.75rem; /* rounded-xl */
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            cursor: crosshair;
-        }
-        /* Hide default file input */
-        .hidden-input { display: none; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mobile Image Cropper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {font-family: 'Inter', sans-serif; min-height: 100vh; margin:0; background:#f3f4f6;}
+    canvas {display:block; background:#fff; border:2px dashed #d1d5db; max-width:100%; height:auto;
+            border-radius:.75rem; box-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05);
+            cursor:crosshair;}
+    .hidden-input {display:none;}
+  </style>
 </head>
 <body class="p-4 flex flex-col items-center justify-center">
 
-    <div class="w-full max-w-2xl bg-white p-6 md:p-8 rounded-2xl shadow-2xl space-y-6">
-        <h1 class="text-3xl font-bold text-gray-800 text-center">
-            Mobile Image Cropper
-        </h1>
-        <p class="text-center text-gray-500 mb-6">
-            Upload, define a crop area by dragging on the image, and download the result.
-        </p>
-
-        <!-- Image Upload and Controls -->
-        <div class="flex flex-col sm:flex-row gap-4">
-            <label for="imageUpload" class="flex-1 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 text-center shadow-md">
-                Select Image
-            </label>
-            <input type="file" id="imageUpload" class="hidden-input" accept="image/*">
-
-            <button id="cropButton" disabled
-                class="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 disabled:opacity-50 shadow-md">
-                Crop Selection
-            </button>
-
-            <button id="downloadButton" disabled
-                class="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 disabled:opacity-50 shadow-md">
-                Download Cropped
-            </button>
-        </div>
-
-        <!-- Canvas Area -->
-        <div id="canvasContainer" class="w-full relative min-h-64 flex items-center justify-center rounded-xl bg-gray-100 p-2">
-             <p id="placeholderText" class="text-gray-400 text-lg absolute">Upload an image to start cropping...</p>
-             <canvas id="imageCanvas"></canvas>
-        </div>
-
-        <!-- Notification Box -->
-        <div id="notification" class="hidden p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg" role="alert"></div>
-
-    </div>
-
-    <script>
-        // Global Constants
-        const NOTIFICATION_DURATION = 3000;
-        const MIN_CROP_SIZE = 5; // Minimum width/height for a valid crop
-
-        // DOM Elements
-        const canvas = document.getElementById('imageCanvas');
-        const ctx = canvas.getContext('2d');
-        const uploadInput = document.getElementById('imageUpload');
-        const cropButton = document.getElementById('cropButton');
-        const downloadButton = document.getElementById('downloadButton');
-        const notificationBox = document.getElementById('notification');
-        const placeholderText = document.getElementById('placeholderText');
-        const canvasContainer = document.getElementById('canvasContainer');
-
-        // State Variables
-        let originalImage = null; // Stores the loaded Image object
-        let isDragging = false;
-        let cropRect = { startX: 0, startY: 0, endX: 0, endY: 0 };
-        let imageToCanvasRatio = 1; // Ratio of image pixels to canvas pixels
-
-        // --- Utility Functions ---
-
-        /**
-         * Converts canvas coordinates (x, y) to image coordinates based on the current ratio.
-         * @param {number} x - Canvas X coordinate.
-         * @param {number} y - Canvas Y coordinate.
-         * @returns {{x: number, y: number}} - Image coordinates.
-         */
-        function canvasToImageCoords(x, y) {
-            // Apply scaling to convert canvas coordinate back to original image coordinate
-            return {
-                x: x * imageToCanvasRatio,
-                y: y * imageToCanvasRatio
-            };
-        }
-
-        /**
-         * Displays a temporary notification message.
-         * @param {string} message - The message to display.
-         * @param {string} type - 'success' or 'error'.
-         */
-        function showNotification(message, type = 'error') {
-            notificationBox.textContent = message;
-            notificationBox.className = `p-3 border rounded-lg ${type === 'success' ? 'bg-green-100 border-green-400 text-green-700' : 'bg-red-100 border-red-400 text-red-700'}`;
-            notificationBox.classList.remove('hidden');
-
-            setTimeout(() => {
-                notificationBox.classList.add('hidden');
-            }, NOTIFICATION_DURATION);
-        }
-
-
-        // --- Drawing and Rendering ---
-
-        /**
-         * Clears the canvas and redraws the image and the current crop selection.
-         */
-        function redrawCanvas() {
-            if (!originalImage) return;
-
-            // Clear the canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 1. Draw the full image scaled to fit the canvas
-            ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
-
-            // 2. Draw the shaded overlay (Mask)
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // 3. Clear the area inside the crop selection (The "hole" in the mask)
-            const sx = Math.min(cropRect.startX, cropRect.endX);
-            const sy = Math.min(cropRect.startY, cropRect.endY);
-            const width = Math.abs(cropRect.startX - cropRect.endX);
-            const height = Math.abs(cropRect.startY - cropRect.endY);
-
-            ctx.clearRect(sx, sy, width, height);
-
-            // 4. Redraw the image *only* within the cleared crop area
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(sx, sy, width, height);
-            ctx.clip(); // Clip further drawing to this rectangle
-            ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
-            ctx.restore(); // Restore the context
-
-            // 5. Draw the selection border
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(sx, sy, width, height);
-        }
-
-        /**
-         * Sets up the canvas dimensions and initial state when an image is loaded.
-         * @param {Image} image - The loaded Image object.
-         */
-        function setupCanvas(image) {
-            // Set canvas container height based on screen size (for mobile responsiveness)
-            const containerWidth = canvasContainer.clientWidth;
-            // Use a max height of 80% viewport height or a fixed 400px, whichever is smaller
-            const containerHeight = Math.min(window.innerHeight * 0.8, 600);
-            canvasContainer.style.height = `${containerHeight}px`;
-
-            // Calculate optimal canvas size to fit container while maintaining aspect ratio
-            const imageAspectRatio = image.width / image.height;
-            let canvasWidth = containerWidth;
-            let canvasHeight = containerWidth / imageAspectRatio;
-
-            if (canvasHeight > containerHeight) {
-                canvasHeight = containerHeight;
-                canvasWidth = containerHeight * imageAspectRatio;
-            }
-
-            // Ensure canvas dimensions are integers
-            canvas.width = Math.floor(canvasWidth);
-            canvas.height = Math.floor(canvasHeight);
-
-            // Calculate the ratio used for coordinate mapping
-            imageToCanvasRatio = image.width / canvas.width;
-
-            // Clear previous state
-            cropRect = { startX: 0, startY: 0, endX: canvas.width, endY: canvas.height };
-            isDragging = false;
-
-            // Hide placeholder text and make canvas visible
-            placeholderText.classList.add('hidden');
-            canvas.style.display = 'block';
-
-            // Initial draw (full image, no selection)
-            redrawCanvas();
-
-            // Enable buttons
-            cropButton.disabled = false;
-            downloadButton.disabled = false;
-        }
-
-        // --- Event Handlers (Loading, Dragging, Cropping, Downloading) ---
-
-        /**
-         * Handles image file selection.
-         */
-        uploadInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file || !file.type.startsWith('image/')) {
-                showNotification('Please select a valid image file.');
-                originalImage = null;
-                cropButton.disabled = true;
-                downloadButton.disabled = true;
-                placeholderText.classList.remove('hidden');
-                canvas.style.display = 'none';
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const img = new Image();
-                img.onload = () => {
-                    originalImage = img;
-                    setupCanvas(originalImage);
-                };
-                img.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
-        });
-
-
-        /**
-         * Gets the touch or mouse position relative to the canvas.
-         */
-        function getCanvasPos(event) {
-            const rect = canvas.getBoundingClientRect();
-            let clientX, clientY;
-
-            if (event.touches && event.touches.length > 0) {
-                // Handle touch events
-                clientX = event.touches[0].clientX;
-                clientY = event.touches[0].clientY;
-            } else {
-                // Handle mouse events
-                clientX = event.clientX;
-                clientY = event.clientY;
-            }
-
-            // Return coordinates relative to the canvas
-            return {
-                x: clientX - rect.left,
-                y: clientY - rect.top
-            };
-        }
-
-
-        /**
-         * Starts the dragging process (mouse down or touch start).
-         */
-        const startDrag = (event) => {
-            if (!originalImage) return;
-
-            // Prevent default touch behavior (like scrolling)
-            if (event.type.startsWith('touch')) {
-                event.preventDefault();
-            }
-
-            isDragging = true;
-            const pos = getCanvasPos(event);
-
-            // Set the starting point of the crop rectangle
-            cropRect.startX = pos.x;
-            cropRect.startY = pos.y;
-            cropRect.endX = pos.x;
-            cropRect.endY = pos.y;
-
-            redrawCanvas();
-        };
-
-        /**
-         * Updates the crop selection rectangle while dragging (mouse/touch move).
-         */
-        const drag = (event) => {
-            if (!isDragging || !originalImage) return;
-
-            if (event.type.startsWith('touch')) {
-                event.preventDefault();
-            }
-
-            const pos = getCanvasPos(event);
-
-            // Update the end point of the crop rectangle
-            cropRect.endX = pos.x;
-            cropRect.endY = pos.y;
-
-            redrawCanvas();
-        };
-
-        /**
-         * Ends the dragging process (mouse up or touch end).
-         */
-        const stopDrag = () => {
-            if (!originalImage) return;
-            isDragging = false;
-            // Clean up the crop rectangle to ensure start is always <= end for x and y
-            const sx = Math.min(cropRect.startX, cropRect.endX);
-            const sy = Math.min(cropRect.startY, cropRect.endY);
-            const ex = Math.max(cropRect.startX, cropRect.endX);
-            const ey = Math.max(cropRect.startY, cropRect.endY);
-
-            // Update the state with the normalized, finalized rectangle
-            cropRect = { startX: sx, startY: sy, endX: ex, endY: ey };
-        };
-
-
-        // --- Primary Actions ---
-
-        /**
-         * Performs the crop operation and updates the main canvas with the result.
-         */
-        cropButton.addEventListener('click', () => {
-            if (!originalImage) {
-                showNotification('Please load an image first.');
-                return;
-            }
-
-            const width = cropRect.endX - cropRect.startX;
-            const height = cropRect.endY - cropRect.startY;
-
-            if (width < MIN_CROP_SIZE || height < MIN_CROP_SIZE) {
-                showNotification('The selection is too small. Please select a larger area.', 'error');
-                return;
-            }
-
-            // 1. Calculate source coordinates in original image resolution
-            const sourceStart = canvasToImageCoords(cropRect.startX, cropRect.startY);
-            const sourceEnd = canvasToImageCoords(cropRect.endX, cropRect.endY);
-
-            const sourceWidth = sourceEnd.x - sourceStart.x;
-            const sourceHeight = sourceEnd.y - sourceStart.y;
-
-            // 2. Create a temporary canvas for the final high-resolution crop
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = sourceWidth;
-            tempCanvas.height = sourceHeight;
-            const tempCtx = tempCanvas.getContext('2d');
-
-            // 3. Draw the cropped section from the original image onto the temp canvas
-            tempCtx.drawImage(
-                originalImage,
-                sourceStart.x, sourceStart.y, sourceWidth, sourceHeight, // Source rectangle
-                0, 0, sourceWidth, sourceHeight // Destination rectangle
-            );
-
-            // 4. Update the main canvas with the cropped image (using the temp canvas)
-            originalImage = new Image();
-            originalImage.onload = () => {
-                // Re-setup the main canvas with the new cropped image
-                setupCanvas(originalImage);
-                showNotification('Image successfully cropped!', 'success');
-            };
-            originalImage.src = tempCanvas.toDataURL('image/png'); // Use PNG for quality
-
-            // Reset selection to full image
-            cropRect = { startX: 0, startY: 0, endX: canvas.width, endY: canvas.height };
-        });
-
-        /**
-         * Downloads the current canvas content as a PNG file.
-         */
-        downloadButton.addEventListener('click', () => {
-            if (!originalImage) {
-                showNotification('Nothing to download. Please load and crop an image first.');
-                return;
-            }
-
-            // Use the original (now cropped) image object, which is now drawn
-            // on the main canvas at the correct resolution and aspect ratio.
-            const dataURL = canvas.toDataURL('image/png');
-            const a = document.createElement('a');
-            a.href = dataURL;
-            a.download = 'cropped_image_' + Date.now() + '.png';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-
-            showNotification('Download initiated.', 'success');
-        });
-
-
-        // --- Initialize and Attach Event Listeners ---
-
-        // Mouse Events
-        canvas.addEventListener('mousedown', startDrag);
-        canvas.addEventListener('mousemove', drag);
-        canvas.addEventListener('mouseup', stopDrag);
-        canvas.addEventListener('mouseout', stopDrag); // Stop dragging if mouse leaves
-
-        // Touch Events (Crucial for mobile support)
-        canvas.addEventListener('touchstart', startDrag);
-        canvas.addEventListener('touchmove', drag);
-        canvas.addEventListener('touchend', stopDrag);
-        canvas.addEventListener('touchcancel', stopDrag);
-
-        // Initial setup to hide canvas
-        canvas.style.display = 'none';
-
-        // Add a resize listener to potentially update the canvas dimensions
-        // (though we rely mostly on the initial setup for simplicity)
-        window.addEventListener('resize', () => {
-            if (originalImage) {
-                // When resizing, we must re-run setupCanvas to adjust the canvas size
-                // while preserving the image aspect ratio
-                setupCanvas(originalImage);
-            }
-        });
-
-    </script>
+<div class="w-full max-w-2xl bg-white p-6 md:p-8 rounded-2xl shadow-2xl space-y-6">
+  <h1 class="text-3xl font-bold text-gray-800 text-center">Mobile Image Cropper</h1>
+  <p class="text-center text-gray-500 mb-6">
+    Upload → drag to select → crop → download.
+  </p>
+
+  <!-- Controls -->
+  <div class="flex flex-col sm:flex-row gap-4">
+    <label for="imageUpload" class="flex-1 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg text-center">
+      Select Image
+    </label>
+    <input type="file" id="imageUpload" class="hidden-input" accept="image/*">
+
+    <button id="cropButton" disabled class="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50">
+      Crop Selection
+    </button>
+
+    <button id="downloadButton" disabled class="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50">
+      Download Cropped
+    </button>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvasContainer" class="w-full relative min-h-64 flex items-center justify-center rounded-xl bg-gray-100 p-2">
+    <p id="placeholderText" class="text-gray-400 text-lg absolute">Upload an image to start cropping...</p>
+    <canvas id="imageCanvas"></canvas>
+  </div>
+
+  <div id="notification" class="hidden p-3 rounded-lg" role="alert"></div>
+</div>
+
+<script>
+  // ==== Config ====
+  const NOTIFY_MS = 3000;
+  const MIN_CROP = 5;
+
+  // ==== DOM ====
+  const canvas = document.getElementById('imageCanvas');
+  const ctx = canvas.getContext('2d');
+  const upload = document.getElementById('imageUpload');
+  const cropBtn = document.getElementById('cropButton');
+  const dlBtn = document.getElementById('downloadButton');
+  const note = document.getElementById('notification');
+  const placeholder = document.getElementById('placeholderText');
+  const container = document.getElementById('canvasContainer');
+
+  // ==== State ====
+  let img = null;                 // original Image object
+  let dragging = false;
+  let rect = {sx:0, sy:0, ex:0, ey:0};
+  let imgToCanvas = 1;            // originalPx / canvasPx
+
+  // ==== Helpers ====
+  const notify = (msg, type='error') => {
+    note.textContent = msg;
+    note.className = `p-3 border rounded-lg ${type==='success'?'bg-green-100 border-green-400 text-green-700':'bg-red-100 border-red-400 text-red-700'}`;
+    note.classList.remove('hidden');
+    setTimeout(()=>note.classList.add('hidden'), NOTIFY_MS);
+  };
+
+  const canvasPos = e => {
+    const r = canvas.getBoundingClientRect();
+    const ev = e.touches ? e.touches[0] : e;
+    return {x: ev.clientX - r.left, y: ev.clientY - r.top};
+  };
+
+  const toImg = (cx,cy) => ({x: cx*imgToCanvas, y: cy*imgToCanvas});
+
+  // ==== Drawing ====
+  const draw = () => {
+    if (!img) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // image
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+
+    // dark mask
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // clear crop hole
+    const sx = Math.min(rect.sx, rect.ex);
+    const sy = Math.min(rect.sy, rect.ey);
+    const w  = Math.abs(rect.ex - rect.sx);
+    const h  = Math.abs(rect.ey - rect.sy);
+    ctx.clearRect(sx,sy,w,h);
+
+    // image inside hole
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx,sy,w,h); ctx.clip();
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    ctx.restore();
+
+    // border
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(sx,sy,w,h);
+  };
+
+  const resizeCanvas = () => {
+    if (!img) return;
+    const cw = container.clientWidth;
+    const maxH = Math.min(window.innerHeight*0.8, 600);
+    const ar = img.width / img.height;
+
+    let width = cw, height = cw / ar;
+    if (height > maxH) { height = maxH; width = maxH * ar; }
+
+    canvas.width = Math.floor(width);
+    canvas.height = Math.floor(height);
+    imgToCanvas = img.width / canvas.width;
+
+    // reset rect to full canvas
+    rect = {sx:0, sy:0, ex:canvas.width, ey:canvas.height};
+    placeholder.classList.add('hidden');
+    canvas.style.display = 'block';
+    draw();
+    cropBtn.disabled = dlBtn.disabled = false;
+  };
+
+  // ==== Upload ====
+  upload.onchange = e => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith('image/')) return notify('Invalid image');
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const i = new Image();
+      i.onload = () => { img = i; resizeCanvas(); };
+      i.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // ==== Drag ====
+  const start = e => { if(!img) return; e.preventDefault(); dragging=true; const p=canvasPos(e); rect.sx=rect.ex=p.x; rect.sy=rect.ey=p.y; draw(); };
+  const move  = e => { if(!dragging||!img) return; e.preventDefault(); const p=canvasPos(e); rect.ex=p.x; rect.ey=p.y; draw(); };
+  const end   = () => { if(!img) return; dragging=false; const sx=Math.min(rect.sx,rect.ex), sy=Math.min(rect.sy,rect.ey), ex=Math.max(rect.sx,rect.ex), ey=Math.max(rect.sy,rect.ey); rect={sx,sy,ex,ey}; };
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  canvas.addEventListener('mouseup',   end);
+  canvas.addEventListener('mouseout',  end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove',  move,  {passive:false});
+  canvas.addEventListener('touchend',   end);
+  canvas.addEventListener('touchcancel',end);
+
+  // ==== Crop ====
+  cropBtn.onclick = () => {
+    if (!img) return notify('Load an image first');
+    const w = Math.abs(rect.ex - rect.sx);
+    const h = Math.abs(rect.ey - rect.sy);
+    if (w<MIN_CROP || h<MIN_CROP) return notify('Selection too small');
+
+    const src = toImg(Math.min(rect.sx,rect.ex), Math.min(rect.sy,rect.ey));
+    const srcW = Math.abs(rect.ex - rect.sx) * imgToCanvas;
+    const srcH = Math.abs(rect.ey - rect.sy) * imgToCanvas;
+
+    const temp = document.createElement('canvas');
+    temp.width = srcW; temp.height = srcH;
+    const tctx = temp.getContext('2d');
+    tctx.drawImage(img, src.x, src.y, srcW, srcH, 0,0, srcW, srcH);
+
+    const newImg = new Image();
+    newImg.onload = () => { img = newImg; resizeCanvas(); notify('Cropped!','success'); };
+    newImg.src = temp.toDataURL('image/png');
+  };
+
+  // ==== Download (fixed) ====
+  dlBtn.onclick = () => {
+    if (!img) return notify('Nothing to download');
+
+    // Create a temporary canvas at the *original* image size (preserves quality)
+    const temp = document.createElement('canvas');
+    temp.width = img.width;
+    temp.height = img.height;
+    const tctx = temp.getContext('2d');
+    tctx.drawImage(img, 0,0, img.width, img.height);
+
+    // Trigger native download
+    temp.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cropped_${Date.now()}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify('Download started','success');
+    }, 'image/png');
+  };
+
+  // ==== Init ====
+  canvas.style.display = 'none';
+  window.addEventListener('resize', () => img && resizeCanvas());
+</script>
 </body>
 </html>
