@@ -35,7 +35,9 @@
       Download Cropped
     </button>
   </div>
-
+<button onclick="saveCropped()" class="mt-4 w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg">
+  Save to Gallery
+</button>
   <div id="canvasContainer" class="w-full relative min-h-64 flex items-center justify-center rounded-xl bg-gray-100 p-2">
     <p id="placeholderText" class="text-gray-400 text-lg absolute">Upload an image to start cropping...</p>
     <canvas id="imageCanvas"></canvas>
@@ -44,6 +46,45 @@
   <div id="notification" class="hidden p-3 rounded-lg" role="alert"></div>
 </div>
 
+
+<script>
+<script>
+function saveCropped() {
+    if (typeof window.JsBridge === 'undefined') {
+        alert('App not ready. Try again.');
+        return;
+    }
+
+    // Get crop coordinates
+    const sx = Math.min(rect.sx, rect.ex);
+    const sy = Math.min(rect.sy, rect.ey);
+    const w = Math.abs(rect.ex - rect.sx);
+    const h = Math.abs(rect.ey - rect.sy);
+
+    if (w < 5 || h < 5) {
+        alert('Please select a larger area');
+        return;
+    }
+
+    // Create cropped canvas
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w * imgToCanvas;
+    tempCanvas.height = h * imgToCanvas;
+    const tctx = tempCanvas.getContext('2d');
+    tctx.drawImage(
+        img,
+        sx * imgToCanvas, sy * imgToCanvas,
+        w * imgToCanvas, h * imgToCanvas,
+        0, 0,
+        tempCanvas.width, tempCanvas.height
+    );
+
+    const dataURL = tempCanvas.toDataURL('image/png');
+    window.JsBridge.saveImage(dataURL);
+    console.log('Saving cropped image to gallery...');
+}
+</script>
+</script>
 <script>
   const NOTIFY_MS = 3000;
   const MIN_CROP = 5;
@@ -220,3 +261,4 @@
 </script>
 </body>
 </html>
+
